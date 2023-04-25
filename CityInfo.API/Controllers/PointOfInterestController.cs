@@ -1,4 +1,5 @@
 ﻿using CityInfo.API.Models;
+using CityInfo.API.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.JsonPatch;
 using Microsoft.AspNetCore.Mvc;
@@ -10,10 +11,14 @@ namespace CityInfo.API.Controllers
     public class PointOfInterestController : ControllerBase
     {
         private readonly ILogger<PointOfInterestController> logger;
+        private readonly IMailService mailService;
+        private readonly CitiesDataStore citiesDataStore;
 
-        public PointOfInterestController(ILogger<PointOfInterestController> logger)
+        public PointOfInterestController(ILogger<PointOfInterestController> logger, IMailService mailService, CitiesDataStore citiesDataStore)
         {
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            this.mailService = mailService ?? throw new ArgumentNullException(nameof(mailService));
+            this.citiesDataStore = citiesDataStore ?? throw new ArgumentNullException(nameof(citiesDataStore));
         }
 
         [HttpGet]
@@ -47,7 +52,7 @@ namespace CityInfo.API.Controllers
                 return NotFound();
 
             // demo purposes - to be improved
-            var maxPointOfInterestId = CitiesDataStore.Current.Cities
+            var maxPointOfInterestId = citiesDataStore.Cities
                 .SelectMany(city => city.PointsOfInterest)
                 .Max(p => p.Id);
 
@@ -121,15 +126,16 @@ namespace CityInfo.API.Controllers
                 return NotFound();
 
             city.PointsOfInterest.Remove(pointOfInterestFromStore);
+            mailService.Send("Point of interest deleted", $"Point of interest {pointOfInterestFromStore.Name} with id {pointOfInterestFromStore.Id} was deleted.");
             return NoContent();
         }
 
-        static bool CityDoesNotExist(int cityId, out CityDTO? city)
+        bool CityDoesNotExist(int cityId, out CityDTO? city)
         {
-            city = CitiesDataStore.Current.Cities.FirstOrDefault(city => city.Id == cityId);
+            city = citiesDataStore.Cities.FirstOrDefault(city => city.Id == cityId);
             return city is null;
         }
-        static bool PointOfInterestDoesNotExist(CityDTO? city, int pointOfInterestId, out PointOfInterestDTO? pointOfInterestFromStore)
+        bool PointOfInterestDoesNotExist(CityDTO? city, int pointOfInterestId, out PointOfInterestDTO? pointOfInterestFromStore)
         {
             pointOfInterestFromStore = city?.PointsOfInterest
                 .FirstOrDefault(p => p.Id == pointOfInterestId);
