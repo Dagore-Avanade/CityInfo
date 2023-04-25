@@ -45,7 +45,10 @@ namespace CityInfo.API
             builder.Services.AddSingleton<CitiesDataStore>();
             // For this to work (when you are configuring all) use the command add-migration <migrationName> in Package Manager Console.
             // Then you apply the migration to the database using the update-database command, this should produce the CityInfo.db file in this particular scenario.
-            builder.Services.AddDbContext<CityInfoContext>(options => options.UseSqlite("Data Source=CityInfo.db"));
+            builder.Services.AddDbContext<CityInfoContext>(options => options.UseSqlite
+            (
+                builder.Configuration["ConnectionStrings:CityInfoDBConnectionString"]
+            ));
 
             var app = builder.Build();
 
