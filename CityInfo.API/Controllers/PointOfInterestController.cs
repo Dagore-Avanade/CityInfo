@@ -1,4 +1,5 @@
-﻿using CityInfo.API.Models;
+﻿using AutoMapper;
+using CityInfo.API.Models;
 using CityInfo.API.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.JsonPatch;
@@ -12,135 +13,116 @@ namespace CityInfo.API.Controllers
     {
         private readonly ILogger<PointOfInterestController> logger;
         private readonly IMailService mailService;
-        private readonly CitiesDataStore citiesDataStore;
+        private readonly ICityInfoRepository cityInfoRepository;
+        private readonly IMapper mapper;
 
-        public PointOfInterestController(ILogger<PointOfInterestController> logger, IMailService mailService, CitiesDataStore citiesDataStore)
+        public PointOfInterestController(ILogger<PointOfInterestController> logger, IMailService mailService, ICityInfoRepository cityInfoRepository, IMapper mapper)
         {
             this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
             this.mailService = mailService ?? throw new ArgumentNullException(nameof(mailService));
-            this.citiesDataStore = citiesDataStore ?? throw new ArgumentNullException(nameof(citiesDataStore));
+            this.cityInfoRepository = cityInfoRepository ?? throw new ArgumentNullException(nameof(cityInfoRepository));
+            this.mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
         }
 
         [HttpGet]
-        public ActionResult<IEnumerable<PointOfInterestDTO>> GetPointOfInterestOfCity(int cityId)
+        public async Task<ActionResult<IEnumerable<PointOfInterestDTO>>> GetPointOfInterestOfCity(int cityId)
         {
-            if (CityDoesNotExist(cityId, out var city))
+            if (!(await cityInfoRepository.CityExistsAsync(cityId)))
             {
                 logger.LogInformation($"City with id {cityId} wasn't found when accessing points of interest.");
                 return NotFound();
             }
 
-            return Ok(city.PointsOfInterest);
+            var pointsOfInterestForCity = await cityInfoRepository.GetPointsOfInterestForCityAsync(cityId);
+            
+            return Ok(mapper.Map<IEnumerable<PointOfInterestDTO>>(pointsOfInterestForCity));
         }
 
         [HttpGet("{pointofinterestid}", Name = nameof(GetPointOfInterest))]
-        public ActionResult<PointOfInterestDTO> GetPointOfInterest(int cityId, int pointOfInterestId)
+        public async Task<ActionResult<PointOfInterestDTO>> GetPointOfInterest(int cityId, int pointOfInterestId)
         {
-            if (CityDoesNotExist(cityId, out var city))
+            if (!(await cityInfoRepository.CityExistsAsync(cityId)))
                 return NotFound();
 
-            if (PointOfInterestDoesNotExist(city, pointOfInterestId, out var pointOfInterestFromStore))
+            var pointOfInterest = await cityInfoRepository.GetPointOfInterestForCityAsync(cityId, pointOfInterestId);
+            if (pointOfInterest is null)
                 return NotFound();
 
-            return Ok(pointOfInterestFromStore);
+            return Ok(mapper.Map<PointOfInterestDTO>(pointOfInterest));
         }
 
         [HttpPost]
-        public ActionResult<PointOfInterestDTO> CreatePointOfInterest(int cityId, PointOfInterestCreationDTO pointOfInterest)
+        public async Task<ActionResult<PointOfInterestDTO>> CreatePointOfInterest(int cityId, PointOfInterestCreationDTO pointOfInterest)
         {
-            if (CityDoesNotExist(cityId, out var city))
+            if (!(await cityInfoRepository.CityExistsAsync(cityId)))
                 return NotFound();
 
-            // demo purposes - to be improved
-            var maxPointOfInterestId = citiesDataStore.Cities
-                .SelectMany(city => city.PointsOfInterest)
-                .Max(p => p.Id);
+            var finalPointOfInterest = mapper.Map<Entities.PointOfInterest>(pointOfInterest);
+            await cityInfoRepository.AddPointOfInterestForCityAsync(cityId, finalPointOfInterest);
+            await cityInfoRepository.SaveChangesAsync();
+            var createdPointOfInterestToReturn = mapper.Map<PointOfInterestDTO>(finalPointOfInterest);
 
-            var finalPointOfInterest = new PointOfInterestDTO()
+            return CreatedAtRoute(nameof(GetPointOfInterest), new
             {
-                Id = ++maxPointOfInterestId,
-                Name = pointOfInterest.Name,
-                Description = pointOfInterest.Description
-            };
-
-            city.PointsOfInterest.Add(finalPointOfInterest);
-            return CreatedAtRoute(nameof(GetPointOfInterest),
-                new
-                {
-                    cityId,
-                    pointOfInterestId = finalPointOfInterest.Id
-                }, finalPointOfInterest);
+                cityId,
+                pointOfInterestId = createdPointOfInterestToReturn.Id
+            }, createdPointOfInterestToReturn);
         }
 
         [HttpPut("{pointofinterestid}")]
-        public ActionResult UpdatePointOfInterest(int cityId, int pointOfInterestId, PointOfInterestForUpdateDTO pointOfInterest)
+        public async Task<ActionResult> UpdatePointOfInterest(int cityId, int pointOfInterestId, PointOfInterestForUpdateDTO pointOfInterest)
         {
-            if (CityDoesNotExist(cityId, out var city))
+            if (!(await cityInfoRepository.CityExistsAsync(cityId)))
                 return NotFound();
 
-            if (PointOfInterestDoesNotExist(city, pointOfInterestId, out var pointOfInterestFromStore))
+            var pointOfInterestFromDB = await cityInfoRepository.GetPointOfInterestForCityAsync(cityId, pointOfInterestId);
+            if (pointOfInterestFromDB is null)
                 return NotFound();
 
-            pointOfInterestFromStore.Name = pointOfInterest.Name;
-            pointOfInterestFromStore.Description = pointOfInterest.Description;
+            mapper.Map(pointOfInterest, pointOfInterestFromDB);
+            await cityInfoRepository.SaveChangesAsync();
 
             return NoContent();
         }
 
         [HttpPatch("{pointofinterestid}")]
-        public ActionResult PartiallyUpdatePointOfInterest(int cityId, int pointOfInterestId, JsonPatchDocument<PointOfInterestForUpdateDTO> patchDocument)
+        public async Task<ActionResult> PartiallyUpdatePointOfInterest(int cityId, int pointOfInterestId, JsonPatchDocument<PointOfInterestForUpdateDTO> patchDocument)
         {
-            if (CityDoesNotExist(cityId, out var city))
+            if (!(await cityInfoRepository.CityExistsAsync(cityId)))
                 return NotFound();
 
-            if (PointOfInterestDoesNotExist(city, pointOfInterestId, out var pointOfInterestFromStore))
+            var pointOfInterestFromDB = await cityInfoRepository.GetPointOfInterestForCityAsync(cityId, pointOfInterestId);
+            if (pointOfInterestFromDB is null)
                 return NotFound();
 
-            var pointOfInterestToPatch = new PointOfInterestForUpdateDTO()
-            {
-                Name = pointOfInterestFromStore.Name,
-                Description = pointOfInterestFromStore.Description
-            };
-
+            var pointOfInterestToPatch = mapper.Map<PointOfInterestForUpdateDTO>(pointOfInterestFromDB);
             patchDocument.ApplyTo(pointOfInterestToPatch, ModelState);
-            // This validation only applies to the JsonPatchDocument, so we need to check again using TryValidateModel on the result of the patch ApplyTo operation.
-            if (!ModelState.IsValid)
+
+            if (!ModelState.IsValid || !TryValidateModel(pointOfInterestToPatch))
                 return BadRequest(ModelState);
 
-            if (!TryValidateModel(pointOfInterestToPatch))
-                return BadRequest(ModelState);
-
-            pointOfInterestFromStore.Name = pointOfInterestToPatch.Name;
-            pointOfInterestFromStore.Description = pointOfInterestToPatch.Description;
+            mapper.Map(pointOfInterestToPatch, pointOfInterestFromDB);
+            await cityInfoRepository.SaveChangesAsync();
 
             return NoContent();
         }
 
         [HttpDelete("{pointofinterestid}")]
-        public ActionResult DeletePointOfInterest(int cityId, int pointOfInterestId)
+        public async Task<ActionResult> DeletePointOfInterest(int cityId, int pointOfInterestId)
         {
-            if (CityDoesNotExist(cityId, out var city))
+            if (!(await cityInfoRepository.CityExistsAsync(cityId)))
                 return NotFound();
 
-            if (PointOfInterestDoesNotExist(city, pointOfInterestId, out var pointOfInterestFromStore))
+            var pointOfInterestFromDB = await cityInfoRepository.GetPointOfInterestForCityAsync(cityId, pointOfInterestId);
+            if (pointOfInterestFromDB is null)
                 return NotFound();
 
-            city.PointsOfInterest.Remove(pointOfInterestFromStore);
-            mailService.Send("Point of interest deleted", $"Point of interest {pointOfInterestFromStore.Name} with id {pointOfInterestFromStore.Id} was deleted.");
+            cityInfoRepository.DeletePointOfInterest(pointOfInterestFromDB);
+            await cityInfoRepository.SaveChangesAsync();
+
+            mailService.Send("Point of interest deleted", $"Point of interest {pointOfInterestFromDB.Name} with id {pointOfInterestFromDB.Id} was deleted.");
+
             return NoContent();
-        }
-
-        bool CityDoesNotExist(int cityId, out CityDTO? city)
-        {
-            city = citiesDataStore.Cities.FirstOrDefault(city => city.Id == cityId);
-            return city is null;
-        }
-        bool PointOfInterestDoesNotExist(CityDTO? city, int pointOfInterestId, out PointOfInterestDTO? pointOfInterestFromStore)
-        {
-            pointOfInterestFromStore = city?.PointsOfInterest
-                .FirstOrDefault(p => p.Id == pointOfInterestId);
-            
-            return pointOfInterestFromStore is null;
         }
     }
 }
