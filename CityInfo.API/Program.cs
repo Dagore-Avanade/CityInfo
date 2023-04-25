@@ -1,6 +1,8 @@
 using CityInfo.API.Services;
+using CityInfo.API.DbContexts;
 using Microsoft.AspNetCore.StaticFiles;
 using Serilog;
+using Microsoft.EntityFrameworkCore;
 
 namespace CityInfo.API
 {
@@ -34,13 +36,16 @@ namespace CityInfo.API
             builder.Services.AddSingleton<FileExtensionContentTypeProvider>();
 
             // Custom services
-            #if DEBUG
+#if DEBUG
             builder.Services.AddTransient<IMailService, LocalMailService>();
 #else
             builder.Services.AddTransient<IMailService, CloudMailService>();
 #endif
 
             builder.Services.AddSingleton<CitiesDataStore>();
+            // For this to work (when you are configuring all) use the command add-migration <migrationName> in Package Manager Console.
+            // Then you apply the migration to the database using the update-database command, this should produce the CityInfo.db file in this particular scenario.
+            builder.Services.AddDbContext<CityInfoContext>(options => options.UseSqlite("Data Source=CityInfo.db"));
 
             var app = builder.Build();
 
