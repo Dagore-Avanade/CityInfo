@@ -20,14 +20,30 @@ namespace CityInfo.API.Services
                 .ToListAsync();
         }
         
-        public async Task<IEnumerable<City>> GetCitiesAsync(string? name)
+        public async Task<IEnumerable<City>> GetCitiesAsync(string? name, string? search)
         {
-            if (name is null)
+            if (string.IsNullOrEmpty(name) && string.IsNullOrEmpty(search))
                 return await GetCitiesAsync();
 
-            name = name.Trim();
-            return await cityInfoContext.Cities
-                .Where(city => city.Name == name)
+            // Cast to IQueryable to gain deferred execution.
+            var collection = (IQueryable<City>)cityInfoContext.Cities;
+
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                name = name.Trim();
+                collection = collection
+                    .Where(city => city.Name == name);
+            }
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                search = search.Trim();
+                collection = collection
+                    .Where(city => city.Name.Contains(search) || (city.Description != null && city.Description.Contains(search)));
+            }
+
+            // Until the call of ToListAsync no query is executed.
+            return await collection
                 .OrderBy(city => city.Name)
                 .ToListAsync();
         }
