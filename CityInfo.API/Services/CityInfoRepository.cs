@@ -1,6 +1,8 @@
 ﻿using CityInfo.API.DbContexts;
 using CityInfo.API.Entities;
 using Microsoft.EntityFrameworkCore;
+using BCrypt.Net;
+using CityInfo.API.Models;
 
 namespace CityInfo.API.Services
 {
@@ -100,6 +102,35 @@ namespace CityInfo.API.Services
         public void DeletePointOfInterest(PointOfInterest pointOfInterest)
         {
             cityInfoContext.PointsOfInterest.Remove(pointOfInterest);
+        }
+
+        public async Task<User?> GetUserAsync(AuthenticationRequestBody authenticationRequestBody)
+        {
+            var user = await cityInfoContext.Users.SingleOrDefaultAsync(user => user.Username == authenticationRequestBody.UserName);
+            if (user == null || !BCrypt.Net.BCrypt.Verify(authenticationRequestBody.Password, user.Password))
+                return null;
+
+            return user;
+        }
+
+        public async Task<User?> RegisterUserAsync(AuthenticationRequestBody authenticationRequestBody)
+        {
+            if (string.IsNullOrEmpty(authenticationRequestBody.UserName) || (await cityInfoContext.Users.AnyAsync(user => user.Username == authenticationRequestBody.UserName)))
+                return null;
+
+            var user = new User()
+            {
+                Username = authenticationRequestBody.UserName,
+                Password = BCrypt.Net.BCrypt.HashPassword(authenticationRequestBody.Password)
+            };
+            await cityInfoContext.Users.AddAsync(user);
+            await SaveChangesAsync();
+
+            return new User
+            {
+                Username = authenticationRequestBody.UserName,
+                Password = authenticationRequestBody.Password
+            };
         }
     }
 }
