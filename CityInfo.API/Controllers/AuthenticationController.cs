@@ -48,7 +48,7 @@ namespace CityInfo.API.Controllers
             );
             var tokenToReturn = new JwtSecurityTokenHandler().WriteToken(token);
 
-            return Ok(tokenToReturn);
+            return Ok(new { username = user.Username, token = tokenToReturn });
         }
 
         [HttpPost("signup")]

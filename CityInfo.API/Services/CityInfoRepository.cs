@@ -132,5 +132,10 @@ namespace CityInfo.API.Services
                 Password = authenticationRequestBody.Password
             };
         }
+
+        public void AddCity(City city)
+        {
+            cityInfoContext.Cities.Add(city);
+        }
     }
 }
