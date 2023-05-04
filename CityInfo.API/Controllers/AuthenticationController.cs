@@ -7,6 +7,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace CityInfo.API.Controllers
 {
@@ -54,9 +55,16 @@ namespace CityInfo.API.Controllers
         [HttpPost("signup")]
         public async Task<ActionResult<string>> SignUp(AuthenticationRequestBody authenticationRequestBody)
         {
+            var strongPasswordRegEx = new Regex("(?=^.{6,10}$)(?=.*\\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&amp;*()_+}{&quot;:;'?/&gt;.&lt;,])(?!.*\\s).*$");
+
+            if (!strongPasswordRegEx.IsMatch(authenticationRequestBody.Password))
+            {
+                return BadRequest(new { code = 1, message = "Password must contain at least 1 small-case letter, 1 Capital letter, 1 digit, 1 special character and the length should be between 6-10 characters." });
+            }
+
             var user = await cityInfoRepository.RegisterUserAsync(authenticationRequestBody);
             if (user is null)
-                return BadRequest();
+                return BadRequest(new { code = 2, message = "User already exists." });
 
             return await Login(authenticationRequestBody);
         }
